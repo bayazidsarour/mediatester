@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BSK IPTV Player</title>
+    <style>
+      body {
+        text-align: center;
+        margin: 20px;
+      }
+      video {
+        width: 100%;
+        max-width: 800px;
+        margin-bottom: 20px;
+        position: sticky;
+        top: 0;
+      }
+      #fileInput {
+        margin-top: 20px;
+      }
+      /* Wrapper to center the channel list */
+      #channelListWrapper {
+        display: flex;
+        justify-content: center; /* Horizontally center the channel list */
+        margin-top: 20px;
+        width: 100%;
+      }
+      /* Grid for channels */
+      #channelList {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr); /* Two-column grid */
+        gap: 10px;
+        width: 100%;
+        max-width: 800px;
+      }
+      .channel {
+        display: block;
+        padding: 10px 20px;
+        background-color: #007bff;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        text-align: center;
+        text-decoration: none;
+      }
+      .channel:hover {
+        background-color: #0056b3;
+      }
+
+      @keyframes blink {
+        0% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.5;
+        }
+        100% {
+          opacity: 1;
+        }
+      }
+      #controls {
+        margin-top: 20px;
+      }
+      button {
+        padding: 10px 20px;
+        margin: 5px;
+        background-color: #007bff;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+      }
+      button:hover {
+        background-color: #0056b3;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>BSK IPTV PLAYER</h1>
+
+    <!-- Video Player -->
+    <video id="video" controls></video>
+
+    <!-- File Input for M3U/M3U8 Playlist -->
+    <div>
+      <input type="file" id="fileInput" accept=".m3u,.m3u8" />
+    </div>
+
+    <!-- Next/Previous Buttons -->
+    <div id="controls">
+      <button id="prevChannel">Previous</button>
+      <button id="nextChannel">Next</button>
+    </div>
+
+    <!-- Channel List Wrapper -->
+    <div id="channelListWrapper">
+      <!-- Channel List -->
+      <div id="channelList"></div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <script>
+      const video = document.getElementById("video");
+      const fileInput = document.getElementById("fileInput");
+      const channelList = document.getElementById("channelList");
+      const prevChannelButton = document.getElementById("prevChannel");
+      const nextChannelButton = document.getElementById("nextChannel");
+
+      let channels = []; // Array to store channel URLs and names
+      let currentChannelIndex = 0; // Track the current channel index
+
+      // Function to parse the M3U file and extract channels
+      function parseM3UFile(fileContent) {
+        const lines = fileContent.split("\n");
+        let currentChannel = null;
+        let parsedChannels = [];
+
+        for (let i = 0; i < lines.length; i++) {
+          let line = lines[i].trim();
+
+          // If the line starts with #EXTINF, the next line will contain the stream URL
+          if (line.startsWith("#EXTINF:")) {
+            // Extract the channel name from the #EXTINF line
+            let channelName = line.split(",")[1].trim();
+            currentChannel = { name: channelName };
+          } else if (
+            line.startsWith("http://") ||
+            line.startsWith("https://")
+          ) {
+            // If we encounter a valid URL, associate it with the current channel
+            if (currentChannel) {
+              currentChannel.url = line;
+              parsedChannels.push(currentChannel);
+              currentChannel = null; // Reset for the next channel
+            }
+          }
+        }
+
+        return parsedChannels;
+      }
+
+      // Event listener for file input
+      fileInput.addEventListener("change", function (event) {
+        const file = event.target.files[0];
+        if (file) {
+          const reader = new FileReader();
+
+          reader.onload = function (e) {
+            const content = e.target.result;
+            channels = parseM3UFile(content); // Parse channels from the M3U file
+
+            if (channels.length > 0) {
+              displayChannelList(); // Display channels to the user
+              playStream(0); // Play the first channel by default
+            } else {
+              console.log("No valid channels found in the M3U file.");
+            }
+          };
+
+          reader.onerror = function () {
+            console.log("Error reading file. Please try again.");
+          };
+
+          reader.readAsText(file);
+        }
+      });
+
+      // Function to display the list of channels
+      function displayChannelList() {
+        channelList.innerHTML = ""; // Clear the current list
+
+        channels.forEach((channel, index) => {
+          const channelElement = document.createElement("div");
+          channelElement.className = "channel";
+          channelElement.textContent = channel.name || `Channel ${index + 1}`;
+          channelElement.addEventListener("click", () => {
+            playStream(index); // Play the selected channel
+          });
+
+          channelList.appendChild(channelElement);
+        });
+      }
+
+      // Function to play the selected stream by index
+      function playStream(index) {
+        currentChannelIndex = index;
+        const streamUrl = channels[currentChannelIndex].url;
+        if (Hls.isSupported()) {
+          const hls = new Hls();
+          hls.loadSource(streamUrl);
+          hls.attachMedia(video);
+          hls.on(Hls.Events.MANIFEST_PARSED, function () {
+            video.play();
+          });
+
+          hls.on(Hls.Events.ERROR, function (event, data) {
+            console.error("HLS.js error:", data);
+          });
+        } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
+          video.src = streamUrl;
+          video.addEventListener("loadedmetadata", function () {
+            video.play();
+          });
+        } else {
+          console.log("HLS not supported in this browser.");
+        }
+      }
+
+      // Event listeners for next/previous buttons
+      nextChannelButton.addEventListener("click", function () {
+        if (currentChannelIndex < channels.length - 1) {
+          playStream(currentChannelIndex + 1); // Play the next channel
+        }
+      });
+
+      prevChannelButton.addEventListener("click", function () {
+        if (currentChannelIndex > 0) {
+          playStream(currentChannelIndex - 1); // Play the previous channel
+        }
+      });
+    </script>
+  </body>
+</html>
